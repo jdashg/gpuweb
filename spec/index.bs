@@ -588,22 +588,16 @@ dictionary GPULimits {
 A {{GPUBuffer}} represents a block of memory that can be used in GPU operations.
 Data is stored in linear layout, meaning that each byte of the allocation can be
 addressed by its offset from the start of the {{GPUBuffer}}, subject to alignment
-restrictions depending on the operation. Some {{GPUBuffer|GPUBuffers}} can be
-mapped which makes the block of memory accessible via an {{ArrayBuffer}} called
-its mapping.
+restrictions depending on the operation.
 
 {{GPUBuffer|GPUBuffers}} can be created via the following functions:
 
- - {{GPUDevice/createBuffer(descriptor)|GPUDevice.createBuffer(descriptor)}} that returns a new unmapped buffer.
- - {{GPUDevice/createBufferMapped(descriptor)|GPUDevice.createBufferMapped(descriptor)}} that returns a mapped buffer and its mapping.
- - {{GPUDevice/createBufferMappedAsync(descriptor)|GPUDevice.createBufferMappedAsync(descriptor)}} that returns a Promise of a mapped buffer and its mapping.
+ - {{GPUDevice/createBuffer(descriptor)|GPUDevice.createBuffer(descriptor)}} that returns a new buffer.
 
 <script type=idl>
 [Serializable]
 interface GPUBuffer {
-    Promise<ArrayBuffer> mapReadAsync();
-    Promise<ArrayBuffer> mapWriteAsync();
-    void unmap();
+    ArrayBuffer? mapping;
 
     void destroy();
 };
@@ -640,6 +634,12 @@ object, and {{Serializable}} means that the reference can be *copied* between
 realms (threads/workers), allowing multiple realms to access it concurrently.
 Since {{GPUBuffer}} has internal state (mapped, destroyed), that state is
 internally-synchronized - these state changes occur atomically across realms.
+
+{{GPUBuffer/mapping}} is an ArrayBuffer iff {{GPUBuffer/[[usage]]}} contains
+{{GPUBufferUsage/MAP_READ}} or {{GPUBufferUsage/MAP_WRITE}}, null otherwise.
+{{GPUBuffer/mapping}} contents can be written to or read from the GPUBuffer with
+{{GPUQueue/uploadMappedRange}} or {{GPUQueue/uploadMappedRange}} respectively.
+{{GPUBuffer/mapping}} is not coherent (that is, not kept in sync with) with the GPU data.
 
 ## Buffer creation ## {#buffer-creation}
 
@@ -691,7 +691,7 @@ dictionary GPUBufferDescriptor : GPUObjectDescriptorBase {
 ## Buffer Destruction ## {#buffer-destruction}
 
 An application that no longer requires a {{GPUBuffer}} can choose to lose
-access to it before garbage collection by calling {{GPUBuffer/destroy()}}. 
+access to it before garbage collection by calling {{GPUBuffer/destroy()}}.
 
 Note: This allows the user agent to reclaim the GPU memory associated with the {{GPUBuffer}}
  once all previously submitted operations using it are complete.
@@ -1842,6 +1842,9 @@ interface GPUQueue {
     GPUFence createFence(optional GPUFenceDescriptor descriptor = {});
     void signal(GPUFence fence, unsigned long long signalValue);
 
+    void uploadMappedRange(GPUBuffer, GPUBufferSize offset, GPUBufferSize length);
+    void downloadMappedRange(GPUBuffer, GPUBufferSize offset, GPUBufferSize length);
+
     void copyImageBitmapToTexture(
         GPUImageBitmapCopyView source,
         GPUTextureCopyView destination,
@@ -1854,8 +1857,6 @@ GPUQueue includes GPUObjectBase;
    - For now, `copySize.z` must be `1`.
 
 {{GPUQueue/submit(commandBuffers)}} does nothing and produces an error if any of the following is true:
-
- - Any {{GPUBuffer}} referenced in any element of `commandBuffers` isn't in the `"unmapped"` [=buffer state=].
 
 ## GPUFence ## {#fence}
 
